@@ -66,6 +66,7 @@ export function criarPipeline(deps: { chamar: ChamarClaude; store: Store; emitir
   let filaMarcar: Promise<unknown> = Promise.resolve()
 
   function publicar(b: Busca) {
+    b.versao = (b.versao ?? 0) + 1
     const copia = structuredClone(b)
     deps.emitir(b.id, { tipo: 'busca', busca: copia })
     gravando = gravando.then(() => deps.store.salvar(copia)).catch(e => console.error('Falha ao salvar busca', b.id, e))
@@ -129,11 +130,12 @@ export function criarPipeline(deps: { chamar: ChamarClaude; store: Store; emitir
       await publicar(b)
     }, () => parar(b) || encontrados(b).length >= alvo)
     if (parar(b)) return
-    // Só os 2× quantidade mais citados seguem para a revisão; o excesso é descartado.
+    // Só os 2× quantidade mais citados seguem para a revisão; o excesso é descartado, exceto o que o usuário já marcou.
     const fila = encontrados(b).sort((x, y) => y.consultas.length - x.consultas.length)
-    const excesso = new Set(fila.slice(alvo).map(c => c.username))
-    b.criadores = b.criadores.filter(c => !excesso.has(c.username))
-    b.pendentes = { consultas: [], revisar: fila.slice(0, alvo).map(c => c.username) }
+    const manter = new Set([...fila.filter(c => c.marcacao), ...fila.filter(c => !c.marcacao).slice(0, alvo)].map(c => c.username))
+    b.criadores = b.criadores.filter(c => c.status !== 'encontrado' || manter.has(c.username))
+    const revisar = fila.filter(c => manter.has(c.username) && c.marcacao !== 'descartado').map(c => c.username)
+    b.pendentes = { consultas: [], revisar }
     b.etapa = 'revisar'
     await publicar(b)
   }
@@ -207,9 +209,12 @@ export function criarPipeline(deps: { chamar: ChamarClaude; store: Store; emitir
         ocupado = false
         throw new PipelineErro('ESTADO_INVALIDO', 'Só buscas pausadas ou interrompidas podem continuar')
       }
+      // Pausa é limite do plano, não excesso da rodada: o teto recomeça ao continuar.
+      if (b.status === 'pausada') b.chamadasRodada = 0
       b.status = 'rodando'
       b.aviso = undefined
       atual = b
+      await publicar(b)
       fim = rodada(b, b.etapa === 'planejar' || b.etapa === null)
       return structuredClone(b)
     },
@@ -218,6 +223,7 @@ export function criarPipeline(deps: { chamar: ChamarClaude; store: Store; emitir
       const b = await carregarParaRodar(id)
       Object.assign(b, { status: 'rodando', etapa: 'planejar', chamadasRodada: 0, aviso: undefined, pendentes: { consultas: [], revisar: [] } })
       atual = b
+      await publicar(b)
       fim = rodada(b, true)
       return structuredClone(b)
     },

@@ -3,11 +3,12 @@ import type { verificarClaude } from './claude'
 import { paraCsv, visiveis } from './normalize'
 import { PipelineErro, type Evento, type Pipeline } from './pipeline'
 import type { Store } from './store'
-import type { Criador, Filtros, Quantidade } from './types'
+import type { Busca, Criador, Filtros, Quantidade } from './types'
 
 const QUANTIDADES: Quantidade[] = [20, 50, 100]
 const MARCACOES: Criador['marcacao'][] = ['gostei', 'descartado', null]
 const STATUS_ERRO = { OCUPADO: 409, ESTADO_INVALIDO: 409, NAO_ENCONTRADA: 404 } as const
+const HOSTS_LOCAIS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
 
 class ErroEntrada extends Error {}
 
@@ -26,6 +27,11 @@ export function criarApp(deps: {
 }) {
   const { pipeline } = deps
   const app = express()
+  // Bloqueia DNS rebinding: uma página de outro site apontando para 127.0.0.1 chega com outro Host.
+  app.use((req, res, next) => {
+    if (HOSTS_LOCAIS.has(req.hostname)) return next()
+    res.status(403).json({ erro: 'Host não permitido' })
+  })
   app.use(express.json({ limit: '100kb' }))
 
   const buscaOu404 = async (id: string) => {
@@ -48,12 +54,28 @@ export function criarApp(deps: {
   app.get('/api/buscas/:id', async (req, res) => { res.json(await buscaOu404(req.params.id)) })
 
   app.get('/api/buscas/:id/eventos', async (req, res) => {
-    const b = await buscaOu404(req.params.id)
-    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
-    const enviar = (busca: unknown) => res.write(`data: ${JSON.stringify(busca)}\n\n`)
-    enviar(b)
-    const sair = deps.assinar(b.id, e => enviar(e.busca))
+    // Assina antes de ler o snapshot: eventos que chegarem durante a leitura ficam guardados,
+    // e a versão garante que nada mais antigo que o já enviado seja reenviado.
+    let enviada = -1
+    let guardados: Busca[] | null = []
+    const enviar = (busca: Busca) => {
+      if ((busca.versao ?? 0) <= enviada) return
+      enviada = busca.versao ?? 0
+      res.write(`data: ${JSON.stringify(busca)}\n\n`)
+    }
+    const sair = deps.assinar(req.params.id, e => (guardados ? guardados.push(e.busca) : enviar(e.busca)))
     req.on('close', sair)
+    let b: Busca
+    try {
+      b = await buscaOu404(req.params.id)
+    } catch (e) {
+      sair()
+      throw e
+    }
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
+    enviar(b)
+    for (const g of guardados) enviar(g)
+    guardados = null
   })
 
   app.post('/api/buscas/:id/continuar', async (req, res) => { res.json(await pipeline.continuar(req.params.id)) })

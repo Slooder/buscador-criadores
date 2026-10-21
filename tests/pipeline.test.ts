@@ -172,6 +172,65 @@ test('uma busca por vez', async () => {
   await aguardar(id, 'concluida')
 })
 
+test('perfil marcado durante a busca não é cortado pelo limite de 2×', async () => {
+  let liberar!: () => void
+  const portao = new Promise<void>(r => { liberar = r })
+  let marcado = ''
+  let pipelineRef: ReturnType<typeof criarPipeline>
+  let idRef = ''
+  const f = fake({
+    // Grupo 1 termina primeiro (15 < 40) e dispara o 4º; os grupos 2 e 3 chegam depois.
+    // Com 60 perfis, os da faixa 41–60 seriam cortados: marcamos o último perfil já coletado (g3_14).
+    buscar: async (d, n) => {
+      if (n === 2 || n === 3) await new Promise(r => setTimeout(r, 40))
+      if (n === 4) {
+        await portao
+        const atual = ultimosRef.get(idRef)!
+        marcado = atual.criadores[atual.criadores.length - 1].username
+        await pipelineRef.marcar(idRef, marcado, 'gostei')
+      }
+      return { perfis: Array.from({ length: 15 }, (_, i) => ({ username: `g${n}_${i}`, consulta: d.consultas[0] })) }
+    },
+  })
+  const { pipeline, aguardar, ultimos } = await montar(f.chamar)
+  const ultimosRef = ultimos
+  pipelineRef = pipeline
+  const { id } = await pipeline.iniciar('design', 20, {})
+  idRef = id
+  await new Promise(r => setTimeout(r, 150))
+  liberar()
+  const b = await aguardar(id, 'concluida')
+  expect(marcado).not.toBe('')
+  expect(b.criadores.find(c => c.username === marcado)).toMatchObject({ marcacao: 'gostei', status: 'revisado' })
+})
+
+test('continuar de uma pausa reinicia o teto da rodada', async () => {
+  const f = fake()
+  const { pipeline, aguardar, store } = await montar(f.chamar)
+  const consultas = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+  await store.salvar(buscaBase('p1', {
+    status: 'pausada', etapa: 'buscar', chamadas: 19, chamadasRodada: 19,
+    plano: { interpretacao: 'x', criterios: 'c', consultasUsadas: consultas }, pendentes: { consultas, revisar: [] },
+  }))
+  await pipeline.continuar('p1')
+  const b = await aguardar('p1', 'concluida')
+  expect(f.log.length).toBeGreaterThan(1)
+  expect(b.aviso).toBeUndefined()
+})
+
+test('cada publicação aumenta a versão', async () => {
+  const versoes: number[] = []
+  const f = fake()
+  const store = criarStore(join(await mkdtemp(join(tmpdir(), 'pipe-')), 'buscas'))
+  let fim!: () => void
+  const terminou = new Promise<void>(r => { fim = r })
+  const pipeline = criarPipeline({ chamar: f.chamar, store, emitir: (_id, e) => { versoes.push(e.busca.versao!); if (e.busca.status === 'concluida') fim() } })
+  await pipeline.iniciar('design', 20, {})
+  await terminou
+  expect(versoes.length).toBeGreaterThan(3)
+  expect(versoes.every((v, i) => i === 0 || v > versoes[i - 1])).toBe(true)
+})
+
 test('marcações simultâneas não se sobrescrevem', async () => {
   const f = fake()
   const { pipeline, aguardar } = await montar(f.chamar)

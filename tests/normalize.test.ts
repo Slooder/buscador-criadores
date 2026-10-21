@@ -65,6 +65,13 @@ test('paraCsv', () => {
   expect(csv).toContain('"Zé ""Design"", BR"')
 })
 
+test('paraCsv neutraliza fórmulas vindas da web', () => {
+  const linha = paraCsv([criador('a', { nome: '=HYPERLINK("x")', motivo: '+1', email: '@x' })]).split('\r\n')[1]
+  expect(linha).toContain(`"'=HYPERLINK(""x"")"`)
+  expect(linha).toContain(",'+1,")
+  expect(linha).toContain(",'@x,")
+})
+
 test('tetoChamadas', () => {
   expect([20, 50, 100].map(q => tetoChamadas(q as Quantidade))).toEqual([20, 28, 40])
 })

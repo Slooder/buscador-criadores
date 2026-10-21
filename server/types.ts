@@ -55,6 +55,7 @@ export interface Busca {
   criadores: Criador[]
   erros: { quando: string; etapa: Etapa; mensagem: string }[]
   aviso?: string
+  versao?: number
 }
 
 export interface OpcoesVisao {

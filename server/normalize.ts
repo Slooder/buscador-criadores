@@ -61,7 +61,9 @@ export function visiveis(criadores: Criador[], filtros: Filtros, opcoes: OpcoesV
 const COLUNAS = ['username', 'nome', 'seguidores', 'email', 'nota', 'tipo', 'motivo', 'pais', 'idioma', 'url'] as const
 
 const celula = (v: unknown) => {
-  const s = v === undefined || v === null ? '' : String(v)
+  let s = v === undefined || v === null ? '' : String(v)
+  // Texto vindo da web começando com = + - @ seria executado como fórmula pelo Excel.
+  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 

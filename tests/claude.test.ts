@@ -35,6 +35,15 @@ test('sem ferramentas passa --tools vazio e não passa --allowedTools', async ()
   expect(r.args).not.toContain('--allowedTools')
 })
 
+test('falha traz o motivo do stderr', async () => {
+  await expect(fake('--stderr-erro')({ prompt: 'x', schema: {}, ferramentas: [] })).rejects.toMatchObject({ tipo: 'falha', message: expect.stringContaining('token expirado') })
+})
+
+test('stderr grande não trava a chamada', async () => {
+  const chamar = criarChamarClaude({ bin: process.execPath, binArgs: ['tests/fixtures/fake-claude.mjs', '--stderr-grande'], timeoutMs: 5000 })
+  await expect(chamar({ prompt: 'x', schema: {}, ferramentas: [] })).resolves.toMatchObject({ stdin: 'x' })
+})
+
 test('timeout vira ClaudeErro timeout', async () => {
   const chamar = criarChamarClaude({ bin: process.execPath, binArgs: ['tests/fixtures/fake-claude.mjs', '--dormir'], timeoutMs: 300 })
   await expect(chamar({ prompt: 'x', schema: {}, ferramentas: [] })).rejects.toMatchObject({ tipo: 'timeout' })

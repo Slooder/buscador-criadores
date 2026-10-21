@@ -20,11 +20,16 @@ export function App() {
   useEffect(() => { api.status().then(setClaude).catch(() => setClaude({ instalado: false, logado: false })) }, [])
   useEffect(atualizarHistorico, [atualizarHistorico])
 
+  // SSE e respostas HTTP chegam fora de ordem: só aceita estado igual ou mais novo que o exibido.
+  const aplicar = useCallback((nova: Busca) => {
+    setBusca(atual => (!atual || atual.id !== nova.id || (nova.versao ?? 0) >= (atual.versao ?? 0) ? nova : atual))
+  }, [])
+
   useEffect(() => {
     setBusca(null)
     if (!id) return
-    return api.assinar(id, setBusca)
-  }, [id])
+    return api.assinar(id, aplicar)
+  }, [id, aplicar])
 
   // Recarrega o histórico quando a busca aberta muda de status ou ganha criadores.
   useEffect(atualizarHistorico, [busca?.status, busca?.criadores.length, atualizarHistorico])
@@ -32,7 +37,7 @@ export function App() {
   async function agir(f: () => Promise<Busca>) {
     setErro('')
     try {
-      setBusca(await f())
+      aplicar(await f())
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
     }
