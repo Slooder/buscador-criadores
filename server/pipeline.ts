@@ -63,6 +63,7 @@ export function criarPipeline(deps: { chamar: ChamarClaude; store: Store; emitir
   let ocupado = false
   let fim: Promise<void> = Promise.resolve()
   let gravando: Promise<void> = Promise.resolve()
+  let filaMarcar: Promise<unknown> = Promise.resolve()
 
   function publicar(b: Busca) {
     const copia = structuredClone(b)
@@ -221,13 +222,18 @@ export function criarPipeline(deps: { chamar: ChamarClaude; store: Store; emitir
       return structuredClone(b)
     },
 
-    async marcar(id: string, username: string, m: Criador['marcacao']): Promise<Busca> {
-      const b = atual?.id === id ? atual : await lerAtual(id)
-      const c = b?.criadores.find(x => x.username === username)
-      if (!b || !c) throw new PipelineErro('NAO_ENCONTRADA', 'Criador não encontrado')
-      c.marcacao = m
-      await publicar(b)
-      return structuredClone(b)
+    marcar(id: string, username: string, m: Criador['marcacao']): Promise<Busca> {
+      // Em fila: duas marcações lendo o mesmo arquivo ao mesmo tempo perderiam uma delas.
+      const feito = filaMarcar.then(async () => {
+        const b = atual?.id === id ? atual : await lerAtual(id)
+        const c = b?.criadores.find(x => x.username === username)
+        if (!b || !c) throw new PipelineErro('NAO_ENCONTRADA', 'Criador não encontrado')
+        c.marcacao = m
+        await publicar(b)
+        return structuredClone(b)
+      })
+      filaMarcar = feito.catch(() => {})
+      return feito
     },
 
     ler: lerAtual,

@@ -172,6 +172,18 @@ test('uma busca por vez', async () => {
   await aguardar(id, 'concluida')
 })
 
+test('marcações simultâneas não se sobrescrevem', async () => {
+  const f = fake()
+  const { pipeline, aguardar } = await montar(f.chamar)
+  const { id } = await pipeline.iniciar('design', 20, {})
+  const b = await aguardar(id, 'concluida')
+  const [a, c] = b.criadores
+  await Promise.all([pipeline.marcar(id, a.username, 'gostei'), pipeline.marcar(id, c.username, 'descartado')])
+  const salva = await pipeline.ler(id)
+  expect(salva?.criadores.find(x => x.username === a.username)?.marcacao).toBe('gostei')
+  expect(salva?.criadores.find(x => x.username === c.username)?.marcacao).toBe('descartado')
+})
+
 test('marcar persiste', async () => {
   const f = fake()
   const { pipeline, aguardar, store } = await montar(f.chamar)
