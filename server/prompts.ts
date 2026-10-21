@@ -14,9 +14,11 @@ export function promptPlanejar(pedido: string, filtros: Filtros, consultasUsadas
 
 Leia o pedido e os filtros em <dados> e devolva:
 - interpretacao: uma frase dizendo quem você vai procurar.
-- consultas: de 15 a 20 consultas de busca web diferentes entre si que tragam páginas de perfis do Instagram.
+- consultas: de 15 a 20 consultas de busca web diferentes entre si para descobrir contas do Instagram do nicho.
   Varie sinônimos, subnichos, formatos de conteúdo (dicas, tutoriais, bastidores) e termos em português e inglês.
-  Use site:instagram.com na maioria delas. Respeite país/idioma do filtro, se houver.
+  Escreva só palavras-chave, curtas (2 a 5 termos), SEM operadores como site: — a busca já é restrita ao Instagram.
+  Ex.: "designer gráfico dicas", "identidade visual tutorial", "graphic design tips brasil".
+  Respeite país/idioma do filtro, se houver.
   Não repita nenhuma consulta de consultasUsadas.
 - criterios: o que conta como acerto. Por padrão, um criador individual que produz conteúdo do nicho;
   marcas, lojas, escolas e páginas de curadoria/repost não contam, a menos que o pedido peça por elas.
@@ -32,13 +34,16 @@ ${dados({ pedido, filtros, consultasUsadas })}`,
 export function promptBuscar(consultas: string[], criterios: string): ChamadaClaude {
   return {
     ferramentas: ['WebSearch', 'WebFetch'],
-    prompt: `Você encontra perfis do Instagram usando a ferramenta WebSearch.
+    prompt: `Você descobre contas do Instagram usando as ferramentas WebSearch e WebFetch.
 
-Execute CADA consulta de <dados> com WebSearch. Dos resultados, devolva só perfis (instagram.com/<usuario>),
-nunca posts, reels ou outras páginas. Prefira perfis que atendem aos critérios.
-Para cada perfil: username, nome e um trecho da bio se aparecerem; seguidoresTexto e email SOMENTE se aparecerem
-no resultado (ex.: "12,3 mil seguidores"); consulta = a consulta que encontrou o perfil.
-Nunca invente perfis nem números. ${AVISO_WEB}
+Execute CADA consulta de <dados> com WebSearch passando allowed_domains: ["instagram.com"]
+(o operador site: não funciona nesta ferramenta). Colete TODA conta do Instagram que aparecer nos resultados:
+- perfis (instagram.com/<usuario>);
+- autores de posts e reels: o @ aparece no título ("Nome (@usuario) • Instagram") ou no trecho ("usuario on Instagram: ...").
+Meta: de 8 a 15 contas por chamada. Não filtre pelos critérios aqui (outra etapa avalia); só ignore contas claramente fora do nicho.
+Para cada conta: username (sem @), nome e trecho da bio se aparecerem; seguidoresTexto e email SOMENTE se aparecerem
+(ex.: "12,3 mil seguidores"); consulta = a consulta que levou à conta.
+Nunca invente contas nem números. ${AVISO_WEB}
 
 ${dados({ consultas, criterios })}`,
     schema: {
@@ -62,12 +67,13 @@ export function promptRevisar(criterios: string, perfis: Criador[]): ChamadaClau
     ferramentas: ['WebSearch', 'WebFetch'],
     prompt: `Você avalia perfis do Instagram para prospecção de parcerias.
 
-Para CADA perfil de <dados>, devolva uma avaliação:
+Para CADA perfil de <dados>, primeiro pesquise: WebSearch com a consulta = o username e allowed_domains: ["instagram.com"].
+O resumo do resultado costuma trazer seguidores (ex.: "about 31K followers"), a bio e contatos. Use isso para avaliar:
 - tipo: criador (pessoa que produz conteúdo), marca, escola, curadoria (repost/inspiração) ou outro.
-- nota: 0 a 100, o quanto o perfil atende aos critérios.
+- nota: 0 a 100, o quanto o perfil atende aos critérios, com base no que a pesquisa mostrou.
 - motivo: uma frase explicando a nota.
-- seguidores: número inteiro. Se não souber, busque "@usuario" instagram com WebSearch; se não achar, omita.
-- email, pais, idioma: só quando forem públicos/evidentes.
+- seguidores: número inteiro (31K → 31000). Omita se a pesquisa não mostrar.
+- email: só se aparecer na bio ou nos contatos. pais, idioma: só quando evidentes.
 Avalie apenas os usernames fornecidos. ${AVISO_WEB}
 
 ${dados({ criterios, perfis: lote })}`,
